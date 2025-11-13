@@ -1,0 +1,21 @@
+<configuration>
+
+    <conversionRule conversionWord="colorLevel"
+                    converterClass="com.vicky.modularxero.common.logging.ColorLevelConverter" />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %colorLevel %-5level %cyan([MoX-H]) %magenta(%logger{36}) - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Optional: Remove DEBUG logs globally -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Silence DEBUG -->
+    <logger name="com.vicky" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+
+</configuration>
