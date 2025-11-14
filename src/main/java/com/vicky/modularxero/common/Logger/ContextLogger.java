@@ -34,9 +34,11 @@ public class ContextLogger {
     public static final String sessionId = generateSessionId();
     public static final String logFilePath = "modules-globals/logs/";
     public static final String LOG_JOKE = "(peenared)";
+    private final boolean isModule;
+    private final String moduleName;
     private Boolean shouldSave = true;
     private Boolean deafen = false;
-    private Class<?> callingClass;
+    private final Class<?> callingClass;
     @Nullable public File logFile;
 
     /**
@@ -55,15 +57,29 @@ public class ContextLogger {
 
         if (callerClassSub != null && callerClassSub.getClassLoader() instanceof ModuleClassLoader loader) {
             this.callingClass = callerClassSub;
-            deafen = DeafenCommand.Companion.getMODULE_DEAFENING().get(loader.getModuleName());
+            deafen = DeafenCommand.Companion.isDeafened(loader.getModuleName());
+            this.isModule = true;
+            this.moduleName = loader.getModuleName();
         } else if (callerClass != null && callerClass.getClassLoader() instanceof ModuleClassLoader loader) {
             this.callingClass = callerClass;
-            deafen = DeafenCommand.Companion.getMODULE_DEAFENING().get(loader.getModuleName());
+            deafen = DeafenCommand.Companion.isDeafened(loader.getModuleName());
+            this.isModule = true;
+            this.moduleName = loader.getModuleName();
         }
         else {
             this.callingClass = callerClass;
-            System.err.println("[WARN] Caller isn't a form of Module!");
+            this.isModule = false;
+            this.moduleName = null;
         }
+    }
+
+    public ContextLogger(ContextType context, String contextName, boolean deafen, boolean isModule, String moduleName) {
+        this.context = context;
+        this.contextName = contextName.toUpperCase();
+        this.deafen = deafen;
+        this.isModule = isModule;
+        this.moduleName = moduleName;
+        this.callingClass = null;
     }
 
     /**
@@ -82,19 +98,13 @@ public class ContextLogger {
         this.shouldSave = parent.shouldSave;
         this.callingClass = parent.callingClass;
         this.deafen = parent.deafen;
-        if (callingClass.getClassLoader() instanceof ModuleClassLoader loader) {
-            deafen = DeafenCommand.Companion.getMODULE_DEAFENING().get(loader.getModuleName());
-        }
+        this.isModule = true;
+        this.moduleName = parent.moduleName;
     }
 
     public static Class<?> getInvokingSubclass() {
         StackWalker walker = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
         List<StackWalker.StackFrame> frames = walker.walk(stream -> stream.limit(8).toList());
-
-        // frames[0] -> this method (getInvokingSubclass)
-        // frames[1] -> ContextLogger.<init>
-        // frames[2] -> AbstractModule.<init>
-        // frames[3] -> RealModule.<init>  ← we want this one
 
         Class<?> candidate = null;
         for (int i = 1; i < frames.size(); i++) {
@@ -270,14 +280,19 @@ public class ContextLogger {
 
     @NotNull
     private File getModulableFile(Class<?> callerClass) throws IOException {
-        var classLoader = callerClass.getClassLoader();
-        if (logFile == null) {
-            logFile = new File(logFilePath + "log-" + sessionId + ".log");
+        logFile = new File(logFilePath + "log-" + sessionId + ".log");
+        if (callerClass != null) {
+            var classLoader = callerClass.getClassLoader();
             if (classLoader instanceof ModuleClassLoader loader) {
                 var path = logFilePath + loader.getModuleName() + "/" + "log-" + sessionId + ".log";
                 System.out.printf("%nI was %s asked to save by module: %s, path: %s", LOG_JOKE, loader.getModuleName(), path);
                 logFile = new File(path);
             }
+        }
+        else if (isModule) {
+            var path = logFilePath + moduleName + "/" + "log-" + sessionId + ".log";
+            System.out.printf("%nI was %s asked to save by module: %s, path: %s%n", LOG_JOKE, moduleName, path);
+            logFile = new File(path);
         }
 
         // Check if the log file exists, create if it doesn't

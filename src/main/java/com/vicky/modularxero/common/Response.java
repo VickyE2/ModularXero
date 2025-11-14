@@ -9,7 +9,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.Map;
 
 @JsonTypeInfo(use=JsonTypeInfo.Id.NAME, property="type")
-public class Response<T> {
+public class Response<T extends MessageValue<?>> {
     public MessageType type;
     public T payload;
     public String id;

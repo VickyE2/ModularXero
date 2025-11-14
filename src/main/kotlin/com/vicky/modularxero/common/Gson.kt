@@ -5,7 +5,9 @@ import com.google.gson.reflect.TypeToken
 import com.google.gson.stream.JsonReader
 import com.google.gson.stream.JsonWriter
 import com.vicky.modularxero.common.Response.ResponseStatus
+import com.vicky.modularxero.common.ResponseHelper.getValue
 import com.vicky.modularxero.common.values.*
+import java.lang.reflect.Type
 import java.math.BigDecimal
 
 class RuntimeTypeAdapterFactory<T>(
@@ -57,10 +59,14 @@ class RuntimeTypeAdapterFactory<T>(
 
 object ResponseHelper {
 
-    // --- CREATE RESPONSES ---
-
     fun ok(type: MessageType, payload: MapValue<MessageValue<*>>): Response<MapValue<MessageValue<*>>> =
         Response(type, payload, ResponseStatus.OK)
+
+    fun ok(type: MessageType, vararg pairs: Pair<String, MessageValue<*>>): Response<MapValue<MessageValue<*>>> =
+        Response(type, MapValue(pairs.toMap()), ResponseStatus.OK)
+
+    fun okSimple(type: MessageType, vararg pairs: Pair<String, Any?>): Response<MapValue<MessageValue<*>>> =
+        Response(type, mapOfAny(*pairs), ResponseStatus.OK)
 
     fun error(type: MessageType, reason: String): Response<MapValue<MessageValue<*>>> =
         Response(
@@ -71,9 +77,6 @@ object ResponseHelper {
 
     fun pending(type: MessageType): Response<MapValue<MessageValue<*>>> =
         Response(type, MapValue(emptyMap()), ResponseStatus.PENDING)
-
-
-    // --- ACCESSORS for MapValue ---
 
     fun <T : MessageValue<*>> MapValue<MessageValue<*>>.getValue(key: String, clazz: Class<T>): T? {
         val v = this.get()[key] ?: return null
@@ -106,8 +109,81 @@ object ResponseHelper {
         return if (curr != null) (curr.get() to curr.symbol) else null
     }
 
+    fun <T : Enum<T>> MapValue<MessageValue<*>>.getEnum(key: String, enumClass: Class<T>): T? {
+        val curr = getValue(key, EnumValue::class.java)
+        return curr?.get()?.let { enumClass.cast(it) }
+    }
+
+    fun MapValue<MessageValue<*>>.getMap(key: String): MapValue<MessageValue<*>>? =
+        getValue(key, MessageValue::class.java) as? MapValue<MessageValue<*>>?
+
+    fun MapValue<MessageValue<*>>.getStrings(vararg keys: String): Map<String, String?> =
+        keys.associateWith { getString(it) }
+
+    fun MapValue<MessageValue<*>>.getInts(vararg keys: String): Map<String, Int?> =
+        keys.associateWith { getInt(it) }
+
     // --- BUILD MapValue easily ---
     fun mapOf(vararg pairs: Pair<String, MessageValue<*>>) = MapValue(pairs.toMap())
+
+    fun mapOfAny(vararg pairs: Pair<String, Any?>): MapValue<MessageValue<*>> =
+        MapValue(pairs.associate { (k, v) ->
+            k to when (v) {
+                is String -> StringValue(v)
+                is Int -> IntegerValue(v)
+                is Boolean -> BooleanValue(v)
+                is Float -> FloatValue(v)
+                is Double -> DoubleValue(v)
+                is BigDecimal -> CurrencyValue(v, "NGN") // default currency
+                is Enum<*> -> EnumValue(v)
+                is List<*> -> ListValue(v.map { StringValue(it.toString()) }) // safe fallback
+                null -> StringValue("null")
+                else -> StringValue(v.toString())
+            }
+        })
+}
+
+class MapValueBuilder {
+    private val map = mutableMapOf<String, MessageValue<*>>()
+
+    /** Add a single key/value pair */
+    fun put(key: String, value: MessageValue<*>): MapValueBuilder {
+        map[key] = value
+        return this
+    }
+
+    fun put(key: String, v: Any): MapValueBuilder {
+        val possibleTyped = when (v) {
+            is String -> StringValue(v)
+            is Int -> IntegerValue(v)
+            is Boolean -> BooleanValue(v)
+            is Float -> FloatValue(v)
+            is Double -> DoubleValue(v)
+            is BigDecimal -> CurrencyValue(v, "NGN")
+            is Enum<*> -> EnumValue(v)
+            is List<*> -> ListValue(v.map { StringValue(it.toString()) })
+            null -> StringValue("null")
+            else -> StringValue(v.toString())
+        }
+
+        map[key] = possibleTyped
+        return this
+    }
+
+    /** Add multiple pairs at once */
+    fun putAll(vararg pairs: Pair<String, MessageValue<*>>): MapValueBuilder {
+        map.putAll(pairs)
+        return this
+    }
+
+    /** Append another MapValue's entries */
+    fun append(other: MapValue<MessageValue<*>>): MapValueBuilder {
+        map.putAll(other.get())
+        return this
+    }
+
+    /** Convert builder to immutable MapValue */
+    fun build(): MapValue<MessageValue<*>> = MapValue(map.toMap())
 }
 
 val messageValueAdapterFactory = RuntimeTypeAdapterFactory<MessageValue<*>>(
@@ -122,6 +198,19 @@ val messageValueAdapterFactory = RuntimeTypeAdapterFactory<MessageValue<*>>(
     .registerSubtype(ListValue::class.java, "ListValue")
     .registerSubtype(TimestampValue::class.java, "TimestampValue")
     .registerSubtype(CurrencyValue::class.java, "CurrencyValue")
+    .registerSubtype(EnumValue::class.java, "EnumValue")
+
+inline fun <reified T : MessageValue<*>> String.getAsResponse(): Response<T> =
+    gson.fromJson(this, object : TypeToken<Response<T>>() {}.type)
+
+inline fun <reified T : MessageValue<*>> String.getAsMessage(): T =
+    gson.fromJson(this, object : TypeToken<T>() {}.type)
+
+fun <T : MessageValue<*>> Response<T>.toJson(): String =
+    gson.toJson(this)
+
+fun <T : MessageValue<*>> T.toJson(): String =
+    gson.toJson(this)
 
 val gson = GsonBuilder()
     .registerTypeAdapterFactory(messageValueAdapterFactory)

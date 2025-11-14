@@ -35,21 +35,39 @@ private const val CONTEXT_LOGGER_INTERNAL = "com/vicky/modularxero/common/Logger
 
 // simple ModuleClassLoader (per-module loader)
 class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: String) : URLClassLoader(urls, parent) {
+    val logger = ContextLogger(ContextLogger.ContextType.SYSTEM, "MODULE-CLASS-LOADER")
 
     init {
         MODULE_DEAFENING[moduleName] = true
+        logger.print("ModuleClassLoader for $moduleName URLs:")
+        urLs.forEach { logger.print("  - $it", LogType.BASIC) }
+    }
+
+    override fun loadClass(name: String, resolve: Boolean): Class<*> {
+        findLoadedClass(name)?.let { return it }
+
+        try {
+            return super.loadClass(name, resolve)
+        } catch (e: ClassNotFoundException) {
+        }
+
+        val cls = try {
+            findClass(name)
+        } catch (e: ClassNotFoundException) {
+            throw e
+        }
+
+        if (resolve) resolveClass(cls)
+        return cls
     }
 
     override fun findClass(name: String): Class<*> {
-        // load raw resource (class bytes) from the URLs
         val resourcePath = name.replace('.', '/') + ".class"
-        val stream = findResource(resourcePath)?.openStream()
+        val input = getResourceAsStream(resourcePath)
             ?: throw ClassNotFoundException(name)
-        val originalBytes = stream.use { it.readBytes() }
 
-        // transform bytes
-        val transformed = transformClassBytes(originalBytes)
-
+        val bytes = input.use { it.readBytes() }
+        val transformed = transformClassBytes(bytes)
         return defineClass(name, transformed, 0, transformed.size)
     }
 
@@ -122,7 +140,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                                     insnList.remove(insn)
                                     insnList.remove(dupNode)
                                     modified = true
-                                    println("Patched File(String) -> ModuleSandbox.createFile in ${cn.name}.${mn.name}${mn.desc}")
+                                    logger.print("Patched File(String) -> ModuleSandbox.createFile in ${cn.name}.${mn.name}${mn.desc}")
                                     continue
                                 }
                                 "(L$STRING_INTERNAL;L$STRING_INTERNAL;)V" -> {
@@ -147,7 +165,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                                     insnList.remove(insn)
                                     insnList.remove(dupNode)
                                     modified = true
-                                    println("Patched File(String,String) -> ModuleSandbox.createFile in ${cn.name}.${mn.name}${mn.desc}")
+                                    logger.print("Patched File(String,String) -> ModuleSandbox.createFile in ${cn.name}.${mn.name}${mn.desc}")
                                     continue
                                 }
                                 else -> {
@@ -182,7 +200,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                                 )
                                 insnList.set(min, repl)
                                 modified = true
-                                println("Patched Throwable.printStackTrace() -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
+                                logger.print("Patched Throwable.printStackTrace() -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
                                 continue
                             }
 
@@ -215,7 +233,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                                 )
                                 insnList.set(min, repl)
                                 modified = true
-                                println("Patched Throwable.printStackTrace(PrintX) -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
+                                logger.print("Patched Throwable.printStackTrace(PrintX) -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
                                 continue
                             }
                         }
@@ -223,9 +241,9 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
 
                     if (min.opcode == Opcodes.INVOKEVIRTUAL
                         && min.owner == "java/io/PrintStream"
-                        && min.name == "println") {
+                        && min.name == "logger.print") {
 
-                        // Typical pattern: GETSTATIC java/lang/System out|err -> push arg(s) -> INVOKEVIRTUAL println
+                        // Typical pattern: GETSTATIC java/lang/System out|err -> push arg(s) -> INVOKEVIRTUAL logger.print
                         // We'll remove the GETSTATIC (if found nearby) and replace with ModuleSandbox.logMessage(Object, String)
 
                         // try to find GETSTATIC System.out|err within a few instructions back
@@ -266,7 +284,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                         )
                         insnList.set(min, repl)
                         modified = true
-                        println("Patched PrintStream.println -> ModuleSandbox.logMessage in ${cn.name}.${mn.name}${mn.desc}")
+                        logger.print("Patched PrintStream.logger.print -> ModuleSandbox.logMessage in ${cn.name}.${mn.name}${mn.desc}")
                         continue
                     }
                 }
@@ -320,7 +338,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                             "(L${CONTEXT_LOGGER_INTERNAL};L${CONTEXT_LOGGER_INTERNAL}\$ContextType;L${STRING_INTERNAL};)V"
 
                         modified = true
-                        println("Patched ContextLogger(ContextType,String) -> ContextLogger(parent,ContextType,String) in ${cn.name}.${mn.name}${mn.desc}")
+                        logger.print("Patched ContextLogger(ContextType,String) -> ContextLogger(parent,ContextType,String) in ${cn.name}.${mn.name}${mn.desc}")
                     }
                 }
             }
@@ -461,7 +479,7 @@ class ModularZeroScanner(
         }
         val start = Instant.now();
 
-        logger.print("Downloading $url.jar -> $coord")
+        logger.print("Downloading $url -> $coord")
         try {
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.connectTimeout = 15_000
@@ -474,7 +492,7 @@ class ModularZeroScanner(
             conn.inputStream.use { inp ->
                 FileOutputStream(out).use { outS -> inp.copyTo(outS) }
             }
-            logger.print("\rDownloaded $url.jar -> took ${Duration.between(start, Instant.now())}")
+            logger.print("Downloaded $url.jar -> took ${Duration.between(start, Instant.now()).toSeconds()}s")
             return out
         } catch (t: Throwable) {
             logger.print("Error downloading $coord: ${t.message}", true)

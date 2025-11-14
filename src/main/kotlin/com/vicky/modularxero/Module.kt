@@ -1,11 +1,11 @@
 package com.vicky.modularxero
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.vicky.modularxero.DeafenCommand.Companion.isDeafened
 import com.vicky.modularxero.common.Logger.ContextLogger
 import com.vicky.modularxero.common.Response
 import com.vicky.modularxero.common.values.MapValue
 import com.vicky.modularxero.common.values.MessageValue
-import com.vicky.modularxero.db.ModuleDatabaseManager
 import org.hibernate.SessionFactory
 import org.java_websocket.server.WebSocketServer
 import org.jetbrains.annotations.Nullable
@@ -17,7 +17,9 @@ const val DataFolderName: String = "modules-data"
  */
 abstract class AbstractModule : Module {
     private val DEFAULT_LOGGER: ContextLogger by lazy {
-        ContextLogger(ContextLogger.ContextType.SUB_SYSTEM, "${name.uppercase()}-MAIN_LOGGER")
+        ContextLogger(ContextLogger.ContextType.SUB_SYSTEM, "${name.uppercase()}-MAIN_LOGGER",
+            isDeafened(name), true, name
+        )
     }
 
     override fun init(dispatcher: ModularXeroDispatcher) {

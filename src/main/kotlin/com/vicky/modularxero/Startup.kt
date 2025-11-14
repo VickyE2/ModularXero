@@ -1,5 +1,6 @@
 package com.vicky.modularxero
 
+import ch.qos.logback.classic.Logger
 import com.vicky.modularxero.common.util.HibernateUtil
 import com.vicky.modularxero.modules.bueats.BuEatsModule
 import java.io.File
@@ -35,7 +36,7 @@ class Startup {
                 }
                 val instance = clazz.kotlin.objectInstance ?: clazz.getDeclaredConstructor().newInstance()
                 dispatcher!!.registerModule(instance as AbstractModule) // or supply console if you need
-                println("Registered ${clazz.name} from ${jarFile.name}")
+                java.util.logging.Logger.getGlobal().info("Registered ${clazz.name} from ${jarFile.name}")
             }
             dispatcher!!.registerModule(BuEatsModule())
 

@@ -9,6 +9,7 @@ import com.vicky.modularxero.common.util.HibernateUtil;
 import com.vicky.modularxero.common.util.PossibleAccessionException;
 
 import java.util.List;
+import java.util.Map;
 
 import static com.vicky.modularxero.modules.bueats.BuEatsModule.buSF;
 
@@ -48,5 +49,19 @@ public class CafeteriaDao extends GenericDao<Cafeteria, String> implements UserA
             return new PossibleAccessionException<>(false, "Caf Number or password is wrong");
         }        
         return new PossibleAccessionException<Cafeteria>(true, null).setPassableObject(possibility);
+    }
+
+    @Override
+    public PossibleAccessionException<Cafeteria> attemptCreateAccount(String cafNumber, String password, Map<String, Object> otherItems) {
+        Cafeteria possibility = findByUsername(cafNumber);
+        if (possibility == null) {
+            if (!((Boolean) otherItems.get("has_email"))) {
+                return new PossibleAccessionException<>(false, "No cafeteria with cafName was passed");
+            }
+            var caf = new Cafeteria(cafNumber, password, (String) otherItems.get("email"));
+            save(caf);
+            return new PossibleAccessionException<Cafeteria>(true, null).setPassableObject(caf);
+        }
+        return new PossibleAccessionException<>(false, "Person with username `" + cafNumber + "` is already registered");
     }
 }

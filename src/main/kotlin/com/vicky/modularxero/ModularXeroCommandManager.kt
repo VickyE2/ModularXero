@@ -127,6 +127,9 @@ class DeafenCommand : Callable<Int> {
 
     companion object {
         var MODULE_DEAFENING: MutableMap<String, Boolean> = mutableMapOf()
+
+        fun isDeafened(moduleName: String?): Boolean =
+            MODULE_DEAFENING[moduleName] ?: true
     }
 
     override fun call(): Int {

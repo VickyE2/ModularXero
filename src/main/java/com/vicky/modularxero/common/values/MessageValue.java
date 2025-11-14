@@ -20,7 +20,8 @@ import java.util.Objects;
         @JsonSubTypes.Type(value = FloatValue.class, name = "FloatValue"),
         @JsonSubTypes.Type(value = DoubleValue.class, name = "DoubleValue"),
         @JsonSubTypes.Type(value = TimestampValue.class, name = "TimestampValue"),
-        @JsonSubTypes.Type(value = CurrencyValue.class, name = "CurrencyValue")
+        @JsonSubTypes.Type(value = CurrencyValue.class, name = "CurrencyValue"),
+        @JsonSubTypes.Type(value = EnumValue.class, name = "EnumValue")
 })
 public abstract class MessageValue<T> {
     private final T value;

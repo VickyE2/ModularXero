@@ -23,6 +23,8 @@ public class Cafeteria {
         this.cafNumber = cafNumber;
     }
 
+    public Cafeteria() {}
+
     public void setPassword(String password) {
         this.password = password;
     }

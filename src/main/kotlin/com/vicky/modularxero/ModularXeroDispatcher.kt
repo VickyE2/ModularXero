@@ -5,6 +5,7 @@ import com.vicky.modularxero.common.values.MapValue
 import com.vicky.modularxero.common.values.MessageValue
 import com.vicky.modularxero.common.values.StringValue
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.vicky.modularxero.common.Logger.ContextLogger
 import com.vicky.modularxero.common.util.HibernateUtil
 import com.vicky.modularxero.db.ModuleDatabaseManager
 import com.vicky.modularxero.sandbox.ModuleSandbox
@@ -15,9 +16,10 @@ import com.vicky.modularxero.sandbox.ModuleSandbox
 class ModularXeroDispatcher {
     private val modules: MutableMap<String, AbstractModule> = mutableMapOf()
     private val MAPPER = ObjectMapper()
+    private val logger = ContextLogger(ContextLogger.ContextType.SUB_SYSTEM, "Modular-X-Dispatcher")
 
     fun registerModule(module: AbstractModule) {
-        println("Registering module ${module.name}!")
+        logger.print("Registering module ${module.name}!", ContextLogger.LogType.PENDING)
         modules[module.name] = module
 
         // init module with dispatcher reference
@@ -35,13 +37,13 @@ class ModularXeroDispatcher {
                 module.setSessionFactory(ModuleDatabaseManager.getSessionFactory(module))
                 module.start()
             } catch (ex: Exception) {
-                println("Failed to auto-start module ${module.name}: ${ex.message}")
+                logger.print("Failed to auto-start module ${module.name}: ${ex.message}", true)
             }
         }
     }
 
     fun startModule(name: String) {
-        modules[name]?.start() ?: println("Module $name not found!")
+        modules[name]?.start() ?: logger.print("Module $name not found!", ContextLogger.LogType.WARNING)
     }
 
     fun stopModule(name: String) {
@@ -50,12 +52,12 @@ class ModularXeroDispatcher {
             ModuleSandbox.unregisterModule(modules[name]!!)
         }
         else {
-            println("Module $name not found!")
+            logger.print("Module $name not found!", ContextLogger.LogType.WARNING)
         }
     }
 
     fun pauseModule(name: String) {
-        modules[name]?.pause() ?: println("Module $name not found!")
+        modules[name]?.pause() ?: logger.print("Module $name not found!", ContextLogger.LogType.WARNING)
     }
 
     fun listModules(): List<String> = modules.keys.toList()

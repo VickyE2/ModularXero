@@ -2,7 +2,7 @@ package com.vicky.modularxero.common;
 
 public enum MessageType {
     LOGIN,
-    SIGNIN,
+    SIGNUP,
     REQUEST_DATA,
     NULL
 }
