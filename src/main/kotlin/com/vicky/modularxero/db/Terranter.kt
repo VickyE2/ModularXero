@@ -76,44 +76,24 @@ class ModuleDataSourceMultiTenantProvider @JvmOverloads constructor(
     override fun <T> unwrap(clazz: Class<T>): T? =
         if (clazz.isAssignableFrom(this::class.java)) this as T else null
 }
-class SchemaMultiTenantConnectionProvider : AbstractMultiTenantConnectionProvider<String>() {
-    private val connectionProvider: ConnectionProvider
-
-    init {
-        connectionProvider = initConnectionProvider()
+class ModuleTenantResolver : CurrentTenantIdentifierResolver<String?> {
+    override fun resolveCurrentTenantIdentifier(): String? {
+        return currentTenant.get()
     }
 
-    override fun getAnyConnectionProvider(): ConnectionProvider {
-        return connectionProvider
+    override fun validateExistingCurrentSessions(): Boolean {
+        return true
     }
 
-    protected override fun selectConnectionProvider(tenantIdentifier: String?): ConnectionProvider {
-        return connectionProvider
-    }
+    companion object {
+        private val currentTenant: ThreadLocal<String?> = ThreadLocal.withInitial<String?>(Supplier { "global" })
 
-    @Throws(SQLException::class)
-    override fun getConnection(tenantIdentifier: String?): Connection {
-        val connection = super.getConnection(tenantIdentifier)
-        connection.createStatement()
-            .execute(String.format("SET SCHEMA %s;", tenantIdentifier))
-        return connection
-    }
-
-    @Throws(IOException::class)
-    private fun initConnectionProvider(): ConnectionProvider {
-        val properties = Properties()
-        properties.load(javaClass.getResourceAsStream("/hibernate-schema-multitenancy.properties"))
-        val configProperties: MutableMap<String, Any> = HashMap<String, Any>()
-        for (key in properties.stringPropertyNames()) {
-            val value = properties.getProperty(key)
-            configProperties.put(key, value)
+        fun setTenant(tenantId: String?) {
+            currentTenant.set(tenantId)
         }
-
-        val connectionProvider = DriverManagerConnectionProviderImpl()
-        connectionProvider.configure(configProperties)
-        return connectionProvider
     }
 }
+
 object ModuleDatabaseManager {
     // Base folder where per-module DBs are stored
     private val baseDir: Path = File(DataFolderName).toPath().apply {
@@ -204,8 +184,6 @@ object ModuleDatabaseManager {
             this.minimumIdle = 1
             this.isAutoCommit = false
             this.poolName = "mod-$moduleKey-pool-${UUID.randomUUID()}"
-            // recommended for sqlite in-memory or single-writer: set transaction isolation appropriately
-            // add additional driver-specific properties as needed
         }
 
         return HikariDataSource(config)
@@ -251,23 +229,5 @@ object ModuleDatabaseManager {
 
     private fun sanitizeModuleName(name: String): String {
         return name.replace(Regex("[^a-zA-Z0-9_-]"), "_").lowercase()
-    }
-}
-
-class ModuleTenantResolver : CurrentTenantIdentifierResolver<String?> {
-    override fun resolveCurrentTenantIdentifier(): String? {
-        return currentTenant.get()
-    }
-
-    override fun validateExistingCurrentSessions(): Boolean {
-        return true
-    }
-
-    companion object {
-        private val currentTenant: ThreadLocal<String?> = ThreadLocal.withInitial<String?>(Supplier { "global" })
-
-        fun setTenant(tenantId: String?) {
-            currentTenant.set(tenantId)
-        }
     }
 }

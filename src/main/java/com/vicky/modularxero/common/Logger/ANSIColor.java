@@ -14,38 +14,53 @@ public class ANSIColor {
     public static final String RESET = "\033[0m"; // Text Reset
 
     // Regular Colors
-    public static final String BLACK = "\033[0;30m"; // BLACK
-    public static final String RED = "\033[0;31m"; // RED
-    public static final String ORANGE = "\033[38;5;208m"; // ORANGE
-    public static final String PINK = "\033[38;5;205m"; // PINK
-    public static final String GREEN = "\033[0;32m"; // GREEN
-    public static final String YELLOW = "\033[0;33m"; // YELLOW
-    public static final String BLUE = "\033[0;34m"; // BLUE
-    public static final String PURPLE = "\033[0;35m"; // PURPLE
-    public static final String CYAN = "\033[0;36m"; // CYAN
-    public static final String WHITE = "\033[0;37m"; // WHITE
+// Base Colors
+    public static final String BLACK = "\033[30m";
+    public static final String RED = "\033[31m";
+    public static final String GREEN = "\033[32m";
+    public static final String YELLOW = "\033[33m";
+    public static final String BLUE = "\033[34m";
+    public static final String PURPLE = "\033[35m";
+    public static final String CYAN = "\033[36m";
+    public static final String WHITE = "\033[37m";
+    public static final String GRAY = "\033[38;2;128;128;128m";
+    public static final String ORANGE = "\033[38;5;208m";
+    public static final String PINK = "\033[38;5;205m";
 
     // Bold Colors
-    public static final String BLACK_BOLD = "\033[1;30m"; // BLACK
-    public static final String RED_BOLD = "\033[1;31m"; // RED
-    public static final String GREEN_BOLD = "\033[1;32m"; // GREEN
-    public static final String YELLOW_BOLD = "\033[1;33m"; // YELLOW
-    public static final String BLUE_BOLD = "\033[1;34m"; // BLUE
-    public static final String PURPLE_BOLD = "\033[1;35m"; // PURPLE
-    public static final String CYAN_BOLD = "\033[1;36m"; // CYAN
-    public static final String WHITE_BOLD = "\033[1;37m"; // WHITE
-    public static final String ORANGE_BOLD = "\033[1;38;5;208m"; // ORANGE
-    public static final String PINK_BOLD = "\033[1;38;5;205m"; // PINK
+    public static final String BLACK_BOLD = "\033[1;30m";
+    public static final String RED_BOLD = "\033[1;31m";
+    public static final String GREEN_BOLD = "\033[1;32m";
+    public static final String YELLOW_BOLD = "\033[1;33m";
+    public static final String BLUE_BOLD = "\033[1;34m";
+    public static final String PURPLE_BOLD = "\033[1;35m";
+    public static final String CYAN_BOLD = "\033[1;36m";
+    public static final String WHITE_BOLD = "\033[1;37m";
+    public static final String GRAY_BOLD = "\033[1;38;2;128;128;128m";
+    public static final String ORANGE_BOLD = "\033[1;38;5;208m";
+    public static final String PINK_BOLD = "\033[1;38;5;205m";
 
-    // High Intensity Colors (Bright)
-    public static final String DARK_GRAY = "\033[0;90m"; // DARK GRAY
-    public static final String LIGHT_RED = "\033[0;91m"; // LIGHT RED
-    public static final String LIGHT_GREEN = "\033[0;92m"; // LIGHT GREEN
-    public static final String LIGHT_YELLOW = "\033[0;93m"; // LIGHT YELLOW
-    public static final String LIGHT_BLUE = "\033[0;94m"; // LIGHT BLUE
-    public static final String LIGHT_PURPLE = "\033[0;95m"; // LIGHT PURPLE
-    public static final String LIGHT_CYAN = "\033[0;96m"; // LIGHT CYAN
-    public static final String LIGHT_GRAY = "\033[0;97m"; // LIGHT GRAY
+    // Dark Variants (TrueColor for rich, distinct deep shades)
+    public static final String DARK_RED = "\033[38;2;139;0;0m";       // #8B0000
+    public static final String DARK_GREEN = "\033[38;2;0;100;0m";     // #006400
+    public static final String DARK_YELLOW = "\033[38;2;184;134;11m"; // #B8860B
+    public static final String DARK_BLUE = "\033[38;2;0;0;139m";       // #00008B
+    public static final String DARK_PURPLE = "\033[38;2;75;0;130m";   // #4B0082
+    public static final String DARK_CYAN = "\033[38;2;0;139;139m";     // #008B8B
+    public static final String DARK_GRAY = "\033[90m";
+    public static final String DARK_ORANGE = "\033[38;2;204;85;0m";
+    public static final String DARK_PINK = "\033[38;2;199;21;133m";
+
+    // Light / Bright Variants (High Intensity ANSI & Vibrant TrueColor)
+    public static final String LIGHT_RED = "\033[91m";
+    public static final String LIGHT_GREEN = "\033[92m";
+    public static final String LIGHT_YELLOW = "\033[93m";
+    public static final String LIGHT_BLUE = "\033[94m";
+    public static final String LIGHT_PURPLE = "\033[95m";
+    public static final String LIGHT_CYAN = "\033[96m";
+    public static final String LIGHT_GRAY = "\033[38;2;211;211;211m";
+    public static final String LIGHT_ORANGE = "\033[38;2;255;165;0m";
+    public static final String LIGHT_PINK = "\033[38;2;255;182;193m";
 
     // STYLES
     public static final String BOLD = "\033[1m";
@@ -66,7 +81,9 @@ public class ANSIColor {
         COLOR_MAP.put("blue", BLUE);
         COLOR_MAP.put("purple", PURPLE);
         COLOR_MAP.put("cyan", CYAN);
+        COLOR_MAP.put("gray", GRAY);
         COLOR_MAP.put("white", WHITE);
+
         COLOR_MAP.put("black_bold", BLACK_BOLD);
         COLOR_MAP.put("red_bold", RED_BOLD);
         COLOR_MAP.put("orange_bold", ORANGE_BOLD);
@@ -77,14 +94,28 @@ public class ANSIColor {
         COLOR_MAP.put("purple_bold", PURPLE_BOLD);
         COLOR_MAP.put("cyan_bold", CYAN_BOLD);
         COLOR_MAP.put("white_bold", WHITE_BOLD);
+        COLOR_MAP.put("gray_bold", GRAY_BOLD);
+
         COLOR_MAP.put("bright_gray", LIGHT_GRAY);
         COLOR_MAP.put("bright_red", LIGHT_RED);
         COLOR_MAP.put("bright_green", LIGHT_GREEN);
+        COLOR_MAP.put("bright_pink", LIGHT_PINK);
+        COLOR_MAP.put("bright_orange", LIGHT_ORANGE);
         COLOR_MAP.put("bright_yellow", LIGHT_YELLOW);
         COLOR_MAP.put("bright_blue", LIGHT_BLUE);
         COLOR_MAP.put("bright_purple", LIGHT_PURPLE);
         COLOR_MAP.put("bright_cyan", LIGHT_CYAN);
+
         COLOR_MAP.put("dark_gray", DARK_GRAY);
+        COLOR_MAP.put("dark_red", DARK_RED);
+        COLOR_MAP.put("dark_green", DARK_GREEN);
+        COLOR_MAP.put("dark_pink", DARK_PINK);
+        COLOR_MAP.put("dark_orange", DARK_ORANGE);
+        COLOR_MAP.put("dark_yellow", DARK_YELLOW);
+        COLOR_MAP.put("dark_blue", DARK_BLUE);
+        COLOR_MAP.put("dark_purple", DARK_PURPLE);
+        COLOR_MAP.put("dark_cyan", DARK_CYAN);
+
         COLOR_MAP.put("bold", BOLD);
         COLOR_MAP.put("bold_italic", BOLD_ITALIC);
         COLOR_MAP.put("italic", ITALIC);
@@ -93,7 +124,8 @@ public class ANSIColor {
     }
 
     // Regex pattern to match color markers like red[...] or purple[...]
-    private static final Pattern COLOR_PATTERN = Pattern.compile("([a-zA-Z_]+)\\[([^\\]]+)\\]");
+    private static final Pattern COLOR_PATTERN =
+            Pattern.compile("([a-zA-Z_]+|#[A-Fa-f0-9]{6})\\[(?s)((?:[^\\[\\]]|\\[[^\\[\\]]*])*?)]");;
 
     // Updated pattern: optional segment length after "rainbow"
     // Format: rainbow[-<length>]-color1-color2-...-colorN[Text]
@@ -101,28 +133,28 @@ public class ANSIColor {
     // "rainbow-5-red-blue[HelloWorld]" => segments of 5 characters.
     // "rainbow-red-blue[Hello World]" => defaults to processing word by word.
     private static final Pattern RAINBOW_PATTERN =
-        Pattern.compile("^rainbow(?:-(\\d+))?((?:-[a-zA-Z0-9_]+)+)\\[([^\\]]+)\\]$");
+        Pattern.compile("^rainbow(?:-(\\d+))?((?:-[a-zA-Z0-9_]+)+)\\[([^]]+)]$");
 
     // Combined regex: matches either "rainbow-red-blue-..."
     // or a simple marker like "red" (letters and underscores)
     private static final Pattern GRADIENT_ANGLE_PATTERN =
         Pattern.compile("gradient-(\\d+)deg-((?:#\\p{XDigit}{6}-?)+)\\[(?s)(.*)]");
     private static final Pattern GRADIENT_SIMPLE_PATTERN =
-        Pattern.compile("^gradient(?:-([a-z]+))?-(#[A-Fa-f0-9]{6})-(#[A-Fa-f0-9]{6})\\[([^\\]]*)\\]$");
+        Pattern.compile("^gradient(?:-([a-z]+))?-(#[A-Fa-f0-9]{6})-(#[A-Fa-f0-9]{6})\\[([^]]*)]$");
     private static final Pattern MIXED_COLOR_PATTERN =
-        Pattern.compile(
-            "((?:rainbow(?:-[a-zA-Z0-9_]+)+)|"
-                + "(?:gradient(?:-(?:[a-zA-Z]+))?-(?:#[A-Fa-f0-9]{6})-(?:#[A-Fa-f0-9]{6})|"
-                + "gradient-\\d+deg-[a-zA-Z]+-(?:#[A-Fa-f0-9]{6}(?:-#[A-Fa-f0-9]{6})+))|"
-                + "(?:[a-zA-Z_]+|#[A-Fa-f0-9]{6}))\\[([^\\]]+)\\]");
+            Pattern.compile(
+                    "(rainbow(?:-[a-zA-Z0-9_]+)+|"
+                            + "gradient-[a-zA-Z0-9_\\-#]+|"
+                            + "(?:[a-zA-Z_]+|#[A-Fa-f0-9]{6}))"
+                            + "\\[(?s)(.*?)]"); // (?s) enables DOTALL mode for multiline text
 
     /**
      * This is the list of default colors available:
      * <ul>
      * <li><b>Basic Colors:</b> black, red, green, yellow, blur, purple, cyan, white</li>
      * <li><b>Bold Colors:</b> add _bold to the end of the basic colors</li>
-     * <li><b>Light Colors:</b> add bright_ to the start of the basic colors except black and white which become bright_grey</li>
-     * <li><b>Dark Colors:</b> add dark_ to the start of the basic colors excluding white and black which become dark_ grey</li>
+     * <li><b>Light Colors:</b> add bright_ to the start of the basic colors except black and white which become bright_gray</li>
+     * <li><b>Dark Colors:</b> add dark_ to the start of the basic colors excluding white and black which become dark_gray</li>
      * <li><b>Styles:</b> bold, bold_italic, italic, strikethrough, underline</li>
      * </ul>
      * <br>
@@ -143,8 +175,9 @@ public class ANSIColor {
      * <ul>
      * <li><b>Basic Colors:</b> black, red, green, yellow, blur, purple, cyan, white</li>
      * <li><b>Bold Colors:</b> add _bold to the end of the basic colors</li>
-     * <li><b>Light Colors:</b> add bright_ to the start of the basic colors except black and white which become bright_grey</li>
-     * <li><b>Dark Colors:</b> add dark_ to the start of the basic colors excluding white and black which become dark_ grey</li>
+     * <li><b>Light Colors:</b> add bright_ to the start of the basic colors except black and white which become bright_gray</li>
+     * <li><b>Dark Colors:</b> add dark_ to the start of the basic colors excluding white and black which become dark_gray</li>
+     * <li><b>Hex Colors: use #XXXXXX format only when specifying hex</b></li>
      * <li><b>Styles:</b> bold, bold_italic, italic, strikethrough, underline</li>
      * </ul>
      * To use this you could go:
@@ -169,13 +202,17 @@ public class ANSIColor {
             String processedText = colorize(text);
 
             // Look up the ANSI code for the color/style, or default to RESET if unknown
-            String colorCode = COLOR_MAP.getOrDefault(color, RESET);
+            String colorCode = isHex(color) ? ansiFromHex(color) : COLOR_MAP.getOrDefault(color, RESET);
 
             // Replace the matched segment with the processed content
             message = matcher.replaceFirst(Matcher.quoteReplacement(colorCode + processedText + RESET));
         }
 
         return message;
+    }
+
+    private static boolean isHex(String color) {
+        return color.matches("#[A-Fa-f0-9]{6}");
     }
 
     /**
@@ -265,11 +302,13 @@ public class ANSIColor {
             marker = marker.toLowerCase();
             if (marker.startsWith("rainbow")) {
                 replacement = rainbowColorize(fullMarker);
-            } else if (marker.startsWith("gradient")) {
+            }
+            else if (marker.startsWith("gradient")) {
                 // Use our updated gradientColorize method which handles both basic and manual (angle-based)
                 // markers.
                 replacement = gradientColorize(fullMarker);
-            } else {
+            }
+            else {
                 String colorCode = COLOR_MAP.getOrDefault(marker, RESET);
                 replacement = colorCode + colorize(text) + RESET;
             }

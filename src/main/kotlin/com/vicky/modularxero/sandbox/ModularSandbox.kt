@@ -1,17 +1,54 @@
 package com.vicky.modularxero.sandbox
 
-import com.vicky.modularxero.AbstractModule
-import com.vicky.modularxero.DataFolderName
-import com.vicky.modularxero.ModuleClassLoader
+import com.vicky.modularxero.*
 import com.vicky.modularxero.Startup.Companion.dispatcher
 import com.vicky.modularxero.common.Logger.ContextLogger
+import com.vicky.modularxero.sandbox.ModuleSandbox.baseDir
+import com.vicky.modularxero.sandbox.ModuleSandbox.logger
+import com.vicky.modularxero.sandbox.ModuleSandbox.sanitize
 import java.io.File
 import java.lang.reflect.Field
+import java.nio.file.Path
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
 
+object SandboxPaths {
+    private val walker = StackWalker.getInstance(
+        StackWalker.Option.RETAIN_CLASS_REFERENCE
+    )
+
+    fun forModule(moduleName: String) : Path {
+        val moduleDir = File(baseDir, sanitize(moduleName))
+        if (!moduleDir.exists()) {
+            moduleDir.mkdirs()
+        }
+        return moduleDir.toPath()
+    }
+
+
+    fun forCallingModule(): Path {
+        val caller = findCallingClass()
+            ?: error("Unable to determine calling class")
+
+        val moduleName = ModularXeroDispatcher.INSTANCE!!.getModuleForClass(caller.name)
+            ?: error("Class ${caller.name} is not registered to a module")
+
+        return forModule(moduleName)
+    }
+
+    private fun findCallingClass(): Class<*>? {
+        return walker.walk { frames ->
+            frames
+                .map { it.declaringClass }
+                .filter { !it.name.startsWith("com.vicky.modularxero.sandbox") }
+                .filter { it != SandboxPaths::class.java }
+                .findFirst()
+                .orElse(null)
+        }
+    }
+}
 
 class SandboxFile(private val moduleName: String, path: String) : File(path) {
     /**
@@ -38,7 +75,7 @@ object ModuleSandbox {
     private val logger = Logger.getGlobal()
 
     // baseDir = <jar-parent>/modules-data
-    private val baseDir: File = File(
+    internal val baseDir: File = File(
         File(ModuleSandbox::class.java.protectionDomain.codeSource.location.toURI()).parentFile,
         DataFolderName
     ).apply { mkdirs() }
@@ -147,7 +184,7 @@ object ModuleSandbox {
         }
     }
 
-    private fun sanitize(name: String): String {
+    internal fun sanitize(name: String): String {
         return name.replace(Regex("[^a-zA-Z0-9_-]"), "_")
     }
 
@@ -164,17 +201,17 @@ object ModuleSandbox {
         return p
     }
 
-    private val activeModules: ConcurrentHashMap<String?, AbstractModule?> = ConcurrentHashMap<String?, AbstractModule?>()
+    private val activeModules: ConcurrentHashMap<String, AbstractModule> = ConcurrentHashMap<String, AbstractModule>()
 
     // Called when modules load/unload
     @JvmStatic
     fun registerModule(module: AbstractModule) {
-        activeModules.put(module.name, module)
+        activeModules[module.name] = module
     }
 
     @JvmStatic
     fun unregisterModule(module: AbstractModule) {
-        var classLoader = module.javaClass.classLoader
+        val classLoader = module.javaClass.classLoader
         if (classLoader is ModuleClassLoader) {
             activeModules.remove(classLoader.moduleName)
         }

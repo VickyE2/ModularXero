@@ -1,12 +1,14 @@
 package com.vicky.modularxero
 
 import com.vicky.modularxero.DeafenCommand.Companion.MODULE_DEAFENING
+import com.vicky.modularxero.Startup.Companion.main_logger
+import com.vicky.modularxero.common.LoadingIndicatorElement
 import com.vicky.modularxero.common.Logger.ContextLogger
 import com.vicky.modularxero.common.Logger.ContextLogger.LogType
+import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.AbstractInsnNode
 import org.objectweb.asm.tree.FieldInsnNode
-import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.TypeInsnNode
@@ -26,7 +28,11 @@ data class ModuleDescriptor(
     val mainClass: String,
     val moduleName: String,
     val embeddedLibs: List<String> = emptyList(),
-    val mavenDeps: List<String> = emptyList()
+    val mavenDeps: List<String> = emptyList(),
+    val authors: List<String> = emptyList(),
+    val apiMin: Int,
+    val apiMax: Int,
+    val description: String?
 )
 
 private const val SANDBOX_INTERNAL = "com/vicky/modularxero/sandbox/ModuleSandbox"
@@ -35,7 +41,9 @@ private const val CONTEXT_LOGGER_INTERNAL = "com/vicky/modularxero/common/Logger
 
 // simple ModuleClassLoader (per-module loader)
 class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: String) : URLClassLoader(urls, parent) {
-    val logger = ContextLogger(ContextLogger.ContextType.SYSTEM, "MODULE-CLASS-LOADER")
+    companion object {
+        val logger = ContextLogger(ContextLogger.ContextType.SYSTEM, "MODULE-CLASS-LOADER", { true }, true, "module_patcher")
+    }
 
     init {
         MODULE_DEAFENING[moduleName] = true
@@ -58,6 +66,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
         }
 
         if (resolve) resolveClass(cls)
+        ModularXeroDispatcher.INSTANCE!!.registerClass(cls, moduleName)
         return cls
     }
 
@@ -75,7 +84,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
         val cr = org.objectweb.asm.ClassReader(classBytes)
         val cn = org.objectweb.asm.tree.ClassNode()
         // expand frames to get accurate info for COMPUTE_FRAMES later
-        cr.accept(cn, org.objectweb.asm.ClassReader.EXPAND_FRAMES)
+        cr.accept(cn, org.objectweb.asm.ClassReader.SKIP_FRAMES)
 
         var modified = false
 
@@ -83,11 +92,23 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
             val insnList = mn.instructions ?: continue
             val it = insnList.iterator()
 
+            val hasFileOrPrint = cn.methods.any { mn ->
+                mn.instructions.any { insn ->
+                    insn is TypeInsnNode && insn.desc == "java/io/File" ||
+                            insn is MethodInsnNode && (
+                            (insn.owner == "java/lang/Throwable" && insn.name.startsWith("printStackTrace"))
+                            )
+                }
+            }
+
+            if (!hasFileOrPrint) return classBytes
+
             while (it.hasNext()) {
                 val insn = it.next()
                 if (cn.name.startsWith("com/vicky/modularxero/sandbox/")) {
                     continue
                 }
+                if (cn.name.contains('$') || cn.name.endsWith("DefaultImpls")) continue
 
                 if (insn.opcode == Opcodes.NEW
                     && insn is TypeInsnNode
@@ -179,61 +200,100 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
                     }
                 }
 
+                if (insn is MethodInsnNode
+                    && insn.opcode == Opcodes.INVOKESTATIC
+                    && insn.owner == "java/nio/file/Paths"
+                    && insn.name == "get") {
+                    try {
+                        when (insn.desc) {
+
+                            // Paths.get(String, String...)
+                            "(L$STRING_INTERNAL;[L$STRING_INTERNAL;)Ljava/nio/file/Path;" -> {
+
+                                val callNode = MethodInsnNode(
+                                    Opcodes.INVOKESTATIC,
+                                    SANDBOX_INTERNAL,
+                                    "getPath",
+                                    "(L$STRING_INTERNAL;L$STRING_INTERNAL;[L$STRING_INTERNAL;)Ljava/nio/file/Path;",
+                                    false
+                                )
+
+                                // insert moduleName before the FIRST argument
+                                val earliest = findArgPushStart(insn, 2)
+                                if (earliest != null) {
+                                    insnList.insertBefore(earliest, LdcInsnNode(moduleName))
+                                } else {
+                                    insnList.insertBefore(insn, LdcInsnNode(moduleName))
+                                }
+
+                                insnList.set(insn, callNode)
+                                modified = true
+                                logger.print("Patched Paths.get(String,String...) -> ModuleSandbox.getPath in ${cn.name}.${mn.name}${mn.desc}")
+                            }
+
+                            // Paths.get(URI)
+                            "(Ljava/net/URI;)Ljava/nio/file/Path;" -> {
+
+                                val callNode = MethodInsnNode(
+                                    Opcodes.INVOKESTATIC,
+                                    SANDBOX_INTERNAL,
+                                    "getPath",
+                                    "(L$STRING_INTERNAL;Ljava/net/URI;)Ljava/nio/file/Path;",
+                                    false
+                                )
+
+                                val earliest = findArgPushStart(insn, 1)
+                                if (earliest != null) {
+                                    insnList.insertBefore(earliest, LdcInsnNode(moduleName))
+                                } else {
+                                    insnList.insertBefore(insn, LdcInsnNode(moduleName))
+                                }
+
+                                insnList.set(insn, callNode)
+                                modified = true
+                                logger.print("Patched Paths.get(URI) -> ModuleSandbox.getPath in ${cn.name}.${mn.name}${mn.desc}")
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        t.printStackTrace()
+                    }
+                }
+
+
                 val min = insn as? MethodInsnNode
                 if (min != null) {
                     // ---------- 1) Throwable#printStackTrace ----------
-                    if (min.opcode == Opcodes.INVOKEVIRTUAL
-                        && min.owner == "java/lang/Throwable"
-                        && min.name == "printStackTrace") {
+                    if (min.opcode == Opcodes.INVOKEVIRTUAL &&
+                        min.owner == "java/lang/Throwable" &&
+                        min.name == "printStackTrace") {
 
                         when (min.desc) {
                             "()V" -> {
                                 // stack: ..., throwable
-                                // want -> ModuleSandbox.logException(Throwable, String)
-                                insnList.insertBefore(min, LdcInsnNode(moduleName)) // push module name after throwable
-                                val repl = MethodInsnNode(
-                                    Opcodes.INVOKESTATIC,
-                                    SANDBOX_INTERNAL,
-                                    "logException",
-                                    "(Ljava/lang/Throwable;L$STRING_INTERNAL;)V",
-                                    false
+                                // push Sandbox.getModuleLogger(moduleName)
+                                insnList.insertBefore(min,
+                                    MethodInsnNode(
+                                        Opcodes.INVOKESTATIC,
+                                        SANDBOX_INTERNAL,
+                                        "getModuleLogger",
+                                        "(Ljava/lang/String;)Ljava/io/PrintStream;",
+                                        false
+                                    )
                                 )
-                                insnList.set(min, repl)
-                                modified = true
-                                logger.print("Patched Throwable.printStackTrace() -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
-                                continue
-                            }
-
-                            "(Ljava/io/PrintStream;)V", "(Ljava/io/PrintWriter;)V" -> {
-                                // remove the push that provided the PrintStream/PrintWriter (commonly GETSTATIC System.err)
-                                // attempt to find it within a few instructions before the call
-                                var s = min.previous
-                                var removed = false
-                                var back = 0
-                                while (s != null && back < 8) {
-                                    if (s is FieldInsnNode
-                                        && s.opcode == Opcodes.GETSTATIC
-                                        && s.owner == "java/lang/System"
-                                        && (s.name == "err" || s.name == "out")) {
-                                        insnList.remove(s)
-                                        removed = true
-                                        break
-                                    }
-                                    s = s.previous
-                                    back++
-                                }
-                                // proceed anyway (we'll try to replace); insert module name and static call
                                 insnList.insertBefore(min, LdcInsnNode(moduleName))
+
+                                // change method to the (PrintStream) version
                                 val repl = MethodInsnNode(
-                                    Opcodes.INVOKESTATIC,
-                                    SANDBOX_INTERNAL,
-                                    "logException",
-                                    "(Ljava/lang/Throwable;L$STRING_INTERNAL;)V",
+                                    Opcodes.INVOKEVIRTUAL,
+                                    "java/lang/Throwable",
+                                    "printStackTrace",
+                                    "(Ljava/io/PrintStream;)V",
                                     false
                                 )
                                 insnList.set(min, repl)
                                 modified = true
-                                logger.print("Patched Throwable.printStackTrace(PrintX) -> ModuleSandbox.logException in ${cn.name}.${mn.name}${mn.desc}")
+
+                                logger.print("Patched Throwable.printStackTrace() in ${cn.name}.${mn.name}${mn.desc}")
                                 continue
                             }
                         }
@@ -291,8 +351,7 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
 
                 if (insn.opcode == Opcodes.NEW
                     && insn is TypeInsnNode
-                    && insn.desc == CONTEXT_LOGGER_INTERNAL
-                ) {
+                    && insn.desc == CONTEXT_LOGGER_INTERNAL) {
 
                     val dupNode = insn.next
                     if (dupNode == null || dupNode.opcode != Opcodes.DUP) continue
@@ -347,7 +406,15 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
         if (!modified) return classBytes
 
         try {
-            val cw = org.objectweb.asm.ClassWriter(org.objectweb.asm.ClassWriter.COMPUTE_FRAMES or org.objectweb.asm.ClassWriter.COMPUTE_MAXS)
+            val cw = object : ClassWriter(COMPUTE_FRAMES or COMPUTE_MAXS) {
+                override fun getCommonSuperClass(type1: String?, type2: String?): String {
+                    return try {
+                        super.getCommonSuperClass(type1, type2)
+                    } catch (e: Exception) {
+                        "java/lang/Object" // fallback
+                    }
+                }
+            }
             cn.accept(cw)
             return cw.toByteArray()
         } catch (t: Throwable) {
@@ -388,6 +455,46 @@ class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader, val moduleName: S
     }
 }
 
+private fun bytesContains(hay: ByteArray, needle: ByteArray): Boolean {
+    if (needle.isEmpty()) return true
+    var i = 0
+    val last = needle.size - 1
+    val limit = hay.size - needle.size
+    while (i <= limit) {
+        if (hay[i] == needle[0]) {
+            var j = 1
+            while (j <= last && hay[i + j] == needle[j]) j++
+            if (j > last) return true
+        }
+        i++
+    }
+    return false
+}
+
+/**
+ * Search classes in the jar for the annotation descriptor (internal form).
+ * Returns fully-qualified class names that contain the annotation descriptor bytes.
+ */
+private fun findAnnotatedClassesInJar(jar: File, annotationFqcn: String): List<String> {
+    val internalDesc = "L" + annotationFqcn.replace('.', '/') + ";" // e.g. Lcom/vicky/.../ModuleEntry;
+    val needle = internalDesc.toByteArray(Charsets.UTF_8)
+    val found = mutableListOf<String>()
+    JarFile(jar).use { jf ->
+        val entries = jf.entries()
+        while (entries.hasMoreElements()) {
+            val e = entries.nextElement()
+            if (e.isDirectory) continue
+            if (!e.name.endsWith(".class")) continue
+            val bytes = jf.getInputStream(e).use { it.readBytes() }
+            if (bytesContains(bytes, needle)) {
+                val className = e.name.removeSuffix(".class").replace('/', '.')
+                found += className
+            }
+        }
+    }
+    return found
+}
+
 class ModularZeroScanner(
     private val folder: File =
         File(File(ModularXero::class.java.protectionDomain.codeSource.location.toURI()).parentFile, "modules"),
@@ -395,7 +502,7 @@ class ModularZeroScanner(
         File(File(ModularXero::class.java.protectionDomain.codeSource.location.toURI()).parentFile, "modules-libs") // where downloaded/extracted jars go
 )
 {
-    val logger = ContextLogger(ContextLogger.ContextType.SYSTEM, "Module-Scanner")
+    val logger = ContextLogger(main_logger, ContextLogger.ContextType.SYSTEM, "Module-Scanner")
     init {
         if (!libsDir.exists()) libsDir.mkdirs()
         if (!folder.exists()) folder.mkdirs()
@@ -407,9 +514,14 @@ class ModularZeroScanner(
             val entry = jf.getJarEntry("module.yml") ?: return null
             val txt = jf.getInputStream(entry).bufferedReader().use { it.readText() }
             var main: String? = null
+            var description: String? = null
             var name: String? = null
-            var embedded = mutableListOf<String>()
-            var maven = mutableListOf<String>()
+            val embedded = mutableListOf<String>()
+            val authors = mutableListOf<String>()
+            val maven = mutableListOf<String>()
+
+            var apiMin: Int? = null
+            var apiMax: Int? = null
 
             // very small parser — supports single-line csv style or indented lists
             var currentlyOn = ""
@@ -417,8 +529,11 @@ class ModularZeroScanner(
                 val line = lineRaw.trim()
                 if (line.isEmpty() || line.startsWith("#")) continue
                 when {
-                    line.startsWith("main:") -> main = line.substringAfter("main:").trim()
-                    line.startsWith("module_name:") -> name = line.substringAfter("module_name:").trim()
+                    line.startsWith("main:") -> if (main == null) main = line.substringAfter("main:").trim()
+                    line.startsWith("description:") -> if (description == null) description = line.substringAfter("description:").trim()
+                    line.startsWith("module_name:") || line.startsWith("name:") ->
+                        if (name == null) name = line.substringAfter(':').trim()
+
                     line.startsWith("embeddedLibs:") -> {
                         val rest = line.substringAfter("embeddedLibs:").trim()
                         currentlyOn = "e"
@@ -429,19 +544,74 @@ class ModularZeroScanner(
                         currentlyOn = "m"
                         if (rest.isNotEmpty()) maven.addAll(rest.split(",").map { it.trim() }.filter { it.isNotEmpty() })
                     }
+                    line.startsWith("authors:") -> {
+                        val rest = line.substringAfter("authors:").trim()
+                        currentlyOn = "a"
+                        if (rest.isNotEmpty()) authors.addAll(rest.split(",").map { it.trim() }.filter { it.isNotEmpty() })
+                    }
+
+                    // API variants:
+                    line.startsWith("api:") -> {
+                        val rest = line.substringAfter("api:").trim()
+                        currentlyOn = "api" // enter api block if rest empty
+                        if (rest.isNotEmpty()) {
+                            // handle "2" or "2-4"
+                            if (rest.contains("-")) {
+                                val parts = rest.split("-").map { it.trim() }
+                                apiMin = parts.getOrNull(0)?.toIntOrNull()
+                                apiMax = parts.getOrNull(1)?.toIntOrNull()
+                            } else {
+                                val v = rest.toIntOrNull()
+                                if (v != null) { apiMin = v; apiMax = v }
+                            }
+                        }
+                    }
+                    line.startsWith("apiMin:") || line.startsWith("api_min:") || line.startsWith("minApi:") -> {
+                        apiMin = line.substringAfter(':').trim().toIntOrNull()
+                    }
+                    line.startsWith("apiMax:") || line.startsWith("api_max:") || line.startsWith("maxApi:") -> {
+                        apiMax = line.substringAfter(':').trim().toIntOrNull()
+                    }
+
+                    // inside an `api:` block, allow "min:" / "max:" lines
+                    currentlyOn == "api" && line.startsWith("min:") -> {
+                        apiMin = line.substringAfter("min:").trim().toIntOrNull()
+                    }
+                    currentlyOn == "api" && line.startsWith("max:") -> {
+                        apiMax = line.substringAfter("max:").trim().toIntOrNull()
+                    }
+
                     line.startsWith("-") -> {
-                        // simple YAML-style continuation (fallback) — add to last declared list if present
                         val item = line.substringAfter("-").trim()
-                        // prefer maven if it looks like group:artifact:version else embedded if contains '/'
-                        if (currentlyOn == "m") maven.add(item) else embedded.add(item)
+                        when (currentlyOn) {
+                            "m" -> maven.add(item)
+                            "a" -> authors.add(item)
+                            else -> embedded.add(item)
+                        }
                     }
                     // else ignore
                 }
             }
 
             if (main == null) return null
-            if (name == null) name = "unknown"
-            return ModuleDescriptor(main, name, embedded, maven)
+            if (main.endsWith(".class")) {
+                logger.print("The module main class shouldn't end with .class," +
+                        " tell the developers${" [" + authors.joinToString() + "]"} about this.", LogType.WARNING)
+                main = main.dropLast(".class".length)
+            }
+            if (name == null) throw IllegalArgumentException("Every module yml must have a `moduleName` specified")
+            if (apiMin == null) throw IllegalArgumentException("Minimum api level MUST be specified")
+
+
+            // Normalise: if only apiMin provided, treat apiMax as Int.MAX_VALUE (meaning ">= min")
+            // If only apiMax provided and no min, treat min as 1 (legacy)
+            val normalMin = apiMin
+            val normalMax = when {
+                apiMax != null -> apiMax
+                else -> apiMin
+            }
+
+            return ModuleDescriptor(main, name, embedded, maven, authors, normalMin, normalMax, description)
         }
     }
 
@@ -504,8 +674,8 @@ class ModularZeroScanner(
      * Load modules: returns a list of triples (module jar file, module classloader, mainClass).
      * Only the main class declared in module.yml is loaded — we do not scan every class.
      */
-    fun findAndPrepareModules(): List<Triple<File, ModuleClassLoader, Class<*>>> {
-        val results = mutableListOf<Triple<File, ModuleClassLoader, Class<*>>>()
+    fun findAndPrepareModules(): List<Quad<File, ModuleClassLoader, Class<*>, ModuleDescriptor>> {
+        val results = mutableListOf<Quad<File, ModuleClassLoader, Class<*>, ModuleDescriptor>>()
         if (!folder.exists() || !folder.isDirectory) {
             logger.print("Folder for modules `$folder` dosent exist", LogType.WARNING)
             return results
@@ -518,13 +688,62 @@ class ModularZeroScanner(
 
         jars@for (jar in jars) {
             try {
-                val desc = readModuleDescriptor(jar)
-                if (desc == null) {
-                    logger.print("No module.yml in ${jar.name}, skipping.", LogType.WARNING)
-                    continue@jars
+                val descFromYml = readModuleDescriptor(jar)
+                val desc = if (descFromYml != null) {
+                    descFromYml
+                }
+                else {
+                    // attempt annotation fallback
+                    val annotated = try {
+                        findAnnotatedClassesInJar(jar, ModuleEntry::class.java.name)
+                    } catch (t: Throwable) {
+                        logger.print("Failed scanning ${jar.name} for annotations: ${t.message}", true)
+                        emptyList()
+                    }
+
+                    when {
+                        annotated.isEmpty() -> {
+                            logger.print("No module.yml and no @ModuleEntry in ${jar.name}, skipping.", LogType.WARNING)
+                            continue@jars
+                        }
+                        annotated.size > 1 -> {
+                            logger.print("Jar ${jar.name} contains multiple @ModuleEntry annotated classes: ${annotated.joinToString(", ")} — only one allowed. Skipping.", LogType.ERROR)
+                            continue@jars
+                        }
+                        else -> {
+                            val mainClassName = annotated.first()
+                            // create temporary loader for that jar so we can read annotation values reflectively
+                            val tempUrls = arrayOf(jar.toURI().toURL())
+                            val tempLoader = ModuleClassLoader(tempUrls, parent, jar.nameWithoutExtension + "-annot-scan")
+                            val moduleClazz = tempLoader.loadClass(mainClassName)
+                            val ann = moduleClazz.getAnnotation(ModuleEntry::class.java)
+                            if (ann == null) {
+                                logger.print("Annotation was detected by bytes but reflection failed to find @ModuleEntry on $mainClassName", true)
+                                continue@jars
+                            }
+
+                            // sanity: require moduleName present
+                            if (ann.moduleName.isBlank()) {
+                                logger.print("Annotated module in ${jar.name} must provide a non-empty moduleName in @ModuleEntry", LogType.ERROR)
+                                continue@jars
+                            }
+
+                            logger.print("Found annotated Module class $mainClassName with name ${ann.moduleName}", LogType.SUCCESS)
+                            ModuleDescriptor(
+                                mainClass = mainClassName,
+                                moduleName = ann.moduleName,
+                                embeddedLibs = ann.embeddedLibs.toList(),
+                                mavenDeps = ann.mavenDeps.toList(),
+                                authors = ann.authors.toList(),
+                                description = ann.description,
+                                apiMin = ann.min,
+                                apiMax = ann.max
+                            )
+                        }
+                    }
                 }
 
-                logger.print("Found module descriptor in ${jar.name}: main=${desc.mainClass}", LogType.SUCCESS)
+                logger.print("Module descriptor built for ${jar.name}: main=${desc.mainClass}", LogType.SUCCESS)
 
                 // extract any embedded jars inside the module
                 val extracted = extractEmbeddedJars(jar, desc.embeddedLibs, libsDir)
@@ -543,10 +762,13 @@ class ModularZeroScanner(
                 // Load only the declared main class using module loader
                 val moduleClazz = loader.loadClass(desc.mainClass)
 
-                // sanity check: ensure Module interface assignable from it (if you have Module interface)
-                // if (!Module::class.java.isAssignableFrom(moduleClazz)) { ... }
-
-                results += Triple(jar, loader, moduleClazz)
+                if (isModuleCompatible(desc, ModularXero.API)) {
+                    results += Quad(jar, loader, moduleClazz, desc)
+                }
+                else {
+                    logger.print("Module `${desc.moduleName} is not compatible with the current build's api version." +
+                            " Module api min: ${desc.apiMin}, Module api max: ${desc.apiMax}, env api: ${ModularXero.API}")
+                }
             } catch (t: Throwable) {
                 logger.print("Failed to prepare module ${jar.name}: ${t.message}", true)
             }
@@ -554,6 +776,22 @@ class ModularZeroScanner(
         return results
     }
 }
+
+fun isModuleCompatible(
+    desc: ModuleDescriptor,
+    platformApiVersion: Int
+): Boolean {
+    val min = desc.apiMin
+    val max = desc.apiMax
+    return platformApiVersion in min..max
+}
+
+data class Quad<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D
+)
 
 /**
  * Extracts jars embedded under the given path inside the runnable JAR (e.g. "libs/")
@@ -573,7 +811,8 @@ object EmbeddedLibsLoader {
      */
     fun extractAndCreateLoader(
         resourcePrefix: String = "libs/",
-        outputDir: File = File("./modules-libs")
+        outputDir: File = File("./modules-libs"),
+        embeddedLibs: LoadingIndicatorElement
     ): URLClassLoader {
         if (!outputDir.exists()) outputDir.mkdirs()
 
@@ -640,7 +879,7 @@ object EmbeddedLibsLoader {
             while (urls.hasMoreElements()) {
                 val url = urls.nextElement()
                 // Not going to handle every resource URL scheme here; prefer jar or exploded.
-                println("Found resource URL: $url (skipping advanced extraction)")
+                embeddedLibs.update { original, _ -> "$original - resource: ${url.toString().ellipsize(6)}" }
             }
         }
 

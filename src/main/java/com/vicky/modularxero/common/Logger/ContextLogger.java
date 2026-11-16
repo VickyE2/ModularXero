@@ -1,13 +1,13 @@
 /* Licensed under Apache-2.0 2025. */
 package com.vicky.modularxero.common.Logger;
 
+import com.vicky.modularxero.ModularXeroConsole;
 import com.vicky.modularxero.ModuleClassLoader;
+import com.vicky.modularxero.Startup;
+import com.vicky.modularxero.common.TextElement;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import com.vicky.modularxero.DeafenCommand;
 import org.jetbrains.annotations.Nullable;
@@ -28,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
  * additional formatting such as color and post effects (e.g., bold, italic).
  * </p>
  */
-public class ContextLogger {
+public class ContextLogger extends PrintStream {
     private final ContextType context;
     private final String contextName;
     public static final String sessionId = generateSessionId();
@@ -37,7 +38,7 @@ public class ContextLogger {
     private final boolean isModule;
     private final String moduleName;
     private Boolean shouldSave = true;
-    private Boolean deafen = false;
+    private Supplier<Boolean> deafen = () -> false;
     private final Class<?> callingClass;
     @Nullable public File logFile;
 
@@ -49,37 +50,41 @@ public class ContextLogger {
      * @param contextName A name representing the logging context (converted to uppercase)
      */
     public ContextLogger(ContextType context, String contextName) {
+        super(new LoggerOutputStream(null), true);
         this.context = context;
         this.contextName = contextName.toUpperCase();
         Class<?> callerClass = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE)
                 .walk(frames -> frames.skip(1).findFirst().map(StackWalker.StackFrame::getDeclaringClass).orElse(null));
         Class<?> callerClassSub = getInvokingSubclass();
 
-        if (callerClassSub != null && callerClassSub.getClassLoader() instanceof ModuleClassLoader loader) {
+        if (callerClassSub != null && callerClassSub.getClassLoader() instanceof ModuleClassLoader) {
             this.callingClass = callerClassSub;
-            deafen = DeafenCommand.Companion.isDeafened(loader.getModuleName());
+            deafen = () -> DeafenCommand.Companion.isDeafened(((ModuleClassLoader) callerClassSub.getClassLoader()).getModuleName());
             this.isModule = true;
-            this.moduleName = loader.getModuleName();
-        } else if (callerClass != null && callerClass.getClassLoader() instanceof ModuleClassLoader loader) {
+            this.moduleName = ((ModuleClassLoader) callerClassSub.getClassLoader()).getModuleName();
+        } else if (callerClass != null && callerClass.getClassLoader() != null && callerClass.getClassLoader() instanceof ModuleClassLoader) {
             this.callingClass = callerClass;
-            deafen = DeafenCommand.Companion.isDeafened(loader.getModuleName());
+            deafen = () -> DeafenCommand.Companion.isDeafened(((ModuleClassLoader) callerClass.getClassLoader()).getModuleName());
             this.isModule = true;
-            this.moduleName = loader.getModuleName();
+            this.moduleName = ((ModuleClassLoader) callerClass.getClassLoader()).getModuleName();
         }
         else {
             this.callingClass = callerClass;
             this.isModule = false;
             this.moduleName = null;
         }
+        ((LoggerOutputStream) this.out).logger = this;
     }
 
-    public ContextLogger(ContextType context, String contextName, boolean deafen, boolean isModule, String moduleName) {
+    public ContextLogger(ContextType context, String contextName, Supplier<Boolean> deafen, boolean isModule, String moduleName) {
+        super(new LoggerOutputStream(null));
         this.context = context;
         this.contextName = contextName.toUpperCase();
         this.deafen = deafen;
         this.isModule = isModule;
         this.moduleName = moduleName;
         this.callingClass = null;
+        ((LoggerOutputStream) this.out).logger = this;
     }
 
     /**
@@ -91,6 +96,7 @@ public class ContextLogger {
      * @param contextName A name representing the logging context (converted to uppercase)
      */
     public ContextLogger(ContextLogger parent, ContextType context, String contextName) {
+        super(new LoggerOutputStream(null));
         this.context = context;
         this.contextName = parent.contextName + "-to-" + contextName.toUpperCase();
 
@@ -100,6 +106,7 @@ public class ContextLogger {
         this.deafen = parent.deafen;
         this.isModule = true;
         this.moduleName = parent.moduleName;
+        ((LoggerOutputStream) this.out).logger = this;
     }
 
     public static Class<?> getInvokingSubclass() {
@@ -137,6 +144,7 @@ public class ContextLogger {
      * @param isError If true, the message is treated as an error (red formatting); otherwise, cyan is used.
      */
     public void print(String message, boolean isError) {
+        if (message.isEmpty()) return;
         String contextTag =
                 "[" + ANSIColor.colorize((isError ? "red" : "cyan") + "[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
         String finalContext =
@@ -144,8 +152,8 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen || isError) {
-            System.out.println(finalContext);
+        if (!deafen.get() || isError) {
+            printWithGlobalReader(finalContext);
         }
     }
 
@@ -155,6 +163,7 @@ public class ContextLogger {
      * @param message The message to log.
      */
     public void print(String message) {
+        if (message.isEmpty()) return;
 
         String contextTag =
                 "[" + ANSIColor.colorize("cyan[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
@@ -162,8 +171,8 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen) {
-            System.out.println(finalContext);
+        if (!deafen.get()) {
+            printWithGlobalReader(finalContext);
         }
     }
 
@@ -175,6 +184,7 @@ public class ContextLogger {
      * @param type    The log type, which determines the color used for formatting.
      */
     public void print(String message, LogType type) {
+        if (message.isEmpty()) return;
 
         String contextTag =
                 "[" + ANSIColor.colorize(type.color + "[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
@@ -182,8 +192,8 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen || type.priority <= 1) {
-            System.out.println(finalContext);
+        if (!deafen.get() || type.priority <= 1) {
+            printWithGlobalReader(finalContext);
         }
     }
 
@@ -196,6 +206,7 @@ public class ContextLogger {
      * @param effect  The post-formatting effect to apply (e.g., bold, italic, underline).
      */
     public void print(String message, LogType type, LogPostType effect) {
+        if (message.isEmpty()) return;
 
         String contextTag =
                 "[" + ANSIColor.colorize(type.color + "[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
@@ -204,8 +215,8 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen || type.priority <= 1) {
-            System.out.println(finalContext);
+        if (!deafen.get() || type.priority <= 1) {
+            printWithGlobalReader(finalContext);
         }
     }
 
@@ -218,6 +229,7 @@ public class ContextLogger {
      * @param shouldAffectMessage If true, the message is formatted with the log type's color; otherwise, it is not.
      */
     public void print(String message, LogType type, boolean shouldAffectMessage) {
+        if (message.isEmpty()) return;
 
         String contextTag =
                 "[" + ANSIColor.colorize(type.color + "[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
@@ -230,8 +242,8 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen || type.priority <= 1) {
-            System.out.println(finalContext);
+        if (!deafen.get() || type.priority <= 1) {
+            printWithGlobalReader(finalContext);
         }
     }
 
@@ -245,6 +257,7 @@ public class ContextLogger {
      * @param shouldAffectMessage If true, the message is additionally formatted with the log type's color; otherwise, only the effect is applied.
      */
     public void print(String message, LogType type, LogPostType effect, boolean shouldAffectMessage) {
+        if (message.isEmpty()) return;
         String contextTag =
                 "[" + ANSIColor.colorize(type.color + "[" + context + "-" + contextName + " -- " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd-MM-yyyy : hh:mm a")) + "]") + "] ";
         String finalContext;
@@ -257,9 +270,13 @@ public class ContextLogger {
         if (shouldSave) {
             writeLogToFile(finalContext);
         }
-        if (!deafen || type.priority <= 1) {
-            System.out.println(finalContext);
+        if (!deafen.get() || type.priority <= 1) {
+            printWithGlobalReader(finalContext);
         }
+    }
+
+    private static void printWithGlobalReader(String finalContext) {
+        Startup.Companion.getLogHolder().add(new TextElement(finalContext, false));
     }
 
     private void writeLogToFile(String logMessage) {
@@ -283,15 +300,15 @@ public class ContextLogger {
         logFile = new File(logFilePath + "log-" + sessionId + ".log");
         if (callerClass != null) {
             var classLoader = callerClass.getClassLoader();
-            if (classLoader instanceof ModuleClassLoader loader) {
-                var path = logFilePath + loader.getModuleName() + "/" + "log-" + sessionId + ".log";
-                System.out.printf("%nI was %s asked to save by module: %s, path: %s", LOG_JOKE, loader.getModuleName(), path);
+            if (classLoader instanceof ModuleClassLoader) {
+                var path = logFilePath + ((ModuleClassLoader) classLoader).getModuleName() + "/" + "log-" + sessionId + ".log";
+                // System.out.printf("%nI was %s asked to save by module: %s, path: %s", LOG_JOKE, ((ModuleClassLoader) classLoader).getModuleName(), path);
                 logFile = new File(path);
             }
         }
         else if (isModule) {
             var path = logFilePath + moduleName + "/" + "log-" + sessionId + ".log";
-            System.out.printf("%nI was %s asked to save by module: %s, path: %s%n", LOG_JOKE, moduleName, path);
+            // System.out.printf("%nI was %s asked to save by module: %s, path: %s%n", LOG_JOKE, moduleName, path);
             logFile = new File(path);
         }
 
@@ -315,10 +332,35 @@ public class ContextLogger {
     }
 
     public void toast(String message) {
-        System.out.println(
+        printWithGlobalReader(
                 message
         );
     }
+
+    public void info(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.BASIC, effect, shouldAffectMessage);}
+    public void info(String message, boolean shouldAffectMessage) {print(message, LogType.BASIC, shouldAffectMessage);}
+    public void info(String message, LogPostType effect) {print(message, LogType.BASIC, effect);}
+    public void info(String message) {print(message, LogType.BASIC);}
+    public void warn(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.WARNING, effect, shouldAffectMessage);}
+    public void warn(String message, boolean shouldAffectMessage) {print(message, LogType.WARNING, shouldAffectMessage);}
+    public void warn(String message, LogPostType effect) {print(message, LogType.WARNING, effect);}
+    public void warn(String message) {print(message, LogType.WARNING);}
+    public void severe(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.ERROR, effect, shouldAffectMessage);}
+    public void severe(String message, boolean shouldAffectMessage) {print(message, LogType.ERROR, shouldAffectMessage);}
+    public void severe(String message, LogPostType effect) {print(message, LogType.ERROR, effect);}
+    public void severe(String message) {print(message, LogType.ERROR);}
+    public void pending(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.PENDING, effect, shouldAffectMessage);}
+    public void pending(String message, boolean shouldAffectMessage) {print(message, LogType.PENDING, shouldAffectMessage);}
+    public void pending(String message, LogPostType effect) {print(message, LogType.PENDING, effect);}
+    public void pending(String message) {print(message, LogType.PENDING);}
+    public void success(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.SUCCESS, effect, shouldAffectMessage);}
+    public void success(String message, boolean shouldAffectMessage) {print(message, LogType.SUCCESS, shouldAffectMessage);}
+    public void success(String message, LogPostType effect) {print(message, LogType.SUCCESS, effect);}
+    public void success(String message) {print(message, LogType.SUCCESS);}
+    public void debug(String message, LogPostType effect, boolean shouldAffectMessage) {print(message, LogType.AMBIENCE, effect, shouldAffectMessage);}
+    public void debug(String message, boolean shouldAffectMessage) {print(message, LogType.AMBIENCE, shouldAffectMessage);}
+    public void debug(String message, LogPostType effect) {print(message, LogType.AMBIENCE, effect);}
+    public void debug(String message) {print(message, LogType.AMBIENCE);}
 
 
     /**
@@ -398,7 +440,7 @@ public class ContextLogger {
          */
         PLAIN("white", 5),
         /**
-         * Represents ambient messages (purple).
+         * Represents ambient messages (purple). basically debug
          */
         AMBIENCE("purple", 6);
 
@@ -448,6 +490,26 @@ public class ContextLogger {
             this.effect = effect;
         }
     }
+
+    private static class LoggerOutputStream extends OutputStream {
+        private ContextLogger logger;
+        private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+        LoggerOutputStream(ContextLogger logger) {
+            this.logger = logger;
+        }
+
+        @Override
+        public void write(int b) {
+            if (b == '\n') {
+                logger.print(buffer.toString());
+                buffer.reset();
+            } else {
+                buffer.write(b);
+            }
+        }
+    }
+
 
     @Override
     public boolean equals(Object obj) {

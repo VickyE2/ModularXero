@@ -10,7 +10,7 @@ import java.util.List;
 
 public class GenericDao<T, ID extends Serializable> {
     private final Class<T> persistentClass;
-    private final SessionFactory sessionFactory;
+    protected final SessionFactory sessionFactory;
 
     public GenericDao(Class<T> type, SessionFactory sf) {
         this.persistentClass = type;

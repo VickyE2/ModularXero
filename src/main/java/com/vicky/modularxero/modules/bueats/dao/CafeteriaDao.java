@@ -7,6 +7,7 @@ import com.vicky.modularxero.common.security.PasswordUtil;
 import com.vicky.modularxero.common.security.UserAccessible;
 import com.vicky.modularxero.common.util.HibernateUtil;
 import com.vicky.modularxero.common.util.PossibleAccessionException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Map;
@@ -39,7 +40,7 @@ public class CafeteriaDao extends GenericDao<Cafeteria, String> implements UserA
     }
 
     @Override
-    public PossibleAccessionException<Cafeteria> attemptLogin(String cafNumber, String password) {
+    public PossibleAccessionException<Cafeteria> attemptLogin(@NotNull String cafNumber, String password) {
         Cafeteria possibility = findByUsername(cafNumber);
         if (possibility == null) {
             return new PossibleAccessionException<>(false, "No cafeteria with cafNo `" + cafNumber + "` registered");
@@ -56,7 +57,7 @@ public class CafeteriaDao extends GenericDao<Cafeteria, String> implements UserA
         Cafeteria possibility = findByUsername(cafNumber);
         if (possibility == null) {
             if (!((Boolean) otherItems.get("has_email"))) {
-                return new PossibleAccessionException<>(false, "No cafeteria with cafName was passed");
+                return new PossibleAccessionException<>(false, "Email wasn't passed");
             }
             var caf = new Cafeteria(cafNumber, password, (String) otherItems.get("email"));
             save(caf);

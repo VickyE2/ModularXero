@@ -1,19 +1,14 @@
 package com.vicky.modularxero.common.util;
 
-import com.vicky.modularxero.AbstractServerModule;
-import com.vicky.modularxero.ModularXeroDispatcher;
 import com.vicky.modularxero.ModuleClassLoader;
 import com.vicky.modularxero.db.ModuleDataSourceMultiTenantProvider;
 import com.vicky.modularxero.db.ModuleTenantResolver;
-import com.vicky.modularxero.db.SchemaMultiTenantConnectionProvider;
 import org.hibernate.SessionFactory;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
 import org.hibernate.cfg.AvailableSettings;
 import org.hibernate.cfg.Configuration;
-import org.hibernate.engine.jdbc.connections.spi.AbstractMultiTenantConnectionProvider;
 import org.hibernate.engine.jdbc.connections.spi.MultiTenantConnectionProvider;
 import org.hibernate.service.ServiceRegistry;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.HashSet;
 import java.util.Set;

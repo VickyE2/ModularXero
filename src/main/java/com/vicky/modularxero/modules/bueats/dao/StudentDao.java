@@ -7,6 +7,7 @@ import com.vicky.modularxero.common.security.PasswordUtil;
 import com.vicky.modularxero.common.security.UserAccessible;
 import com.vicky.modularxero.common.util.HibernateUtil;
 import com.vicky.modularxero.common.util.PossibleAccessionException;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Map;
 
@@ -28,7 +29,7 @@ public class StudentDao extends GenericDao<Student, String> implements UserAcces
     }
 
     @Override
-    public PossibleAccessionException<Student> attemptLogin(String matricNumber, String password) {
+    public PossibleAccessionException<Student> attemptLogin(@NotNull String matricNumber, String password) {
         Student possibility = findByUsername(matricNumber);
         if (possibility == null) {
             return new PossibleAccessionException<>(false, "Student with matric number `" + matricNumber + "` dosent exist");
@@ -45,7 +46,7 @@ public class StudentDao extends GenericDao<Student, String> implements UserAcces
         Student possibility = findByUsername(cafNumber);
         if (possibility == null) {
             if (!((Boolean) otherItems.get("has_email"))) {
-                return new PossibleAccessionException<>(false, "No cafeteria with cafName was passed");
+                return new PossibleAccessionException<>(false, "Email wasn't passed");
             }
             var caf = new Student(cafNumber, (String) otherItems.get("first_name"), (String) otherItems.get("last_name"),
                     password, null /* Too lazy to implement rn.. */);

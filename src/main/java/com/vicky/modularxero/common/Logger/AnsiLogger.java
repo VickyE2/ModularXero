@@ -1,6 +1,7 @@
 package com.vicky.modularxero.common.Logger;
 
 import com.vicky.modularxero.ModularXeroConsole;
+import com.vicky.modularxero.Startup;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -172,7 +173,7 @@ public class AnsiLogger {
                 writer.newLine(); // Add a newline after each log entry
             }
         } catch (IOException e) {
-            System.err.println("Failed to write log to file: " + e.getMessage());
+            Startup.Companion.getMain_logger().severe("Failed to write log to file: " + e.getMessage());
         }
     }
     /**
@@ -184,7 +185,7 @@ public class AnsiLogger {
 
     public void toast(String message) {
         String formattedMessage = formatMessageWithColors(message);
-        ModularXeroConsole.GLOBAL_READER.printAbove(new String(formattedMessage.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        Startup.Companion.getMain_logger().info(new String(formattedMessage.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
     }
 
     /**
@@ -237,7 +238,7 @@ public class AnsiLogger {
         String formattedMessage = formatMessageWithColors(logMessage);
 
         // Output to console
-        ModularXeroConsole.GLOBAL_READER.printAbove(new String(formattedMessage.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+        Startup.Companion.getMain_logger().info(new String(formattedMessage.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
 
         // If saveLogs is true, write the log to a file
         if (saveLogs && !logFilePath.isEmpty()) {
